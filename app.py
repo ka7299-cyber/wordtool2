@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-from googletrans import Translator
 from gtts import gTTS
 import tempfile
 import os
@@ -9,7 +8,6 @@ st.set_page_config(page_title="英文單字快查工具", page_icon="📘", layo
 
 @st.cache_data(show_spinner=False)
 def get_word_info_from_dictionaryapi(word: str):
-    """從 dictionaryapi.dev 取得詞條（若有）"""
     try:
         url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
         r = requests.get(url, timeout=6)
@@ -17,7 +15,6 @@ def get_word_info_from_dictionaryapi(word: str):
             return None
         data = r.json()[0]
         phonetic = data.get("phonetic", "") or ""
-        # 例句
         example = None
         definitions = []
         for m in data.get("meanings", []):
@@ -26,7 +23,6 @@ def get_word_info_from_dictionaryapi(word: str):
                 definitions.append({"pos": pos, "definition": d.get("definition", "")})
                 if d.get("example") and not example:
                     example = d.get("example")
-        # audio
         audio_url = None
         for ph in data.get("phonetics", []):
             if ph.get("audio"):
@@ -43,18 +39,19 @@ def get_word_info_from_dictionaryapi(word: str):
     except Exception:
         return None
 
-@st.cache_data(show_spinner=False)
-def fallback_translate_zh(word: str):
-    """備援：用 googletrans 取得中文翻譯（注意非官方 API 可能不穩定）"""
+def fallback_translate_zh_libre(word: str):
+    """使用 LibreTranslate 公開 API 作為備援翻譯（若被封鎖會回傳 None）"""
     try:
-        translator = Translator()
-        res = translator.translate(word, dest="zh-tw")
-        return res.text
+        url = "https://libretranslate.com/translate"
+        payload = {"q": word, "source": "en", "target": "zh", "format": "text"}
+        r = requests.post(url, data=payload, timeout=6)
+        if r.status_code == 200:
+            return r.json().get("translatedText")
     except Exception:
-        return None
+        pass
+    return None
 
 def generate_tts_file(word: str, lang: str = "en"):
-    """用 gTTS 產生暫存音檔並回傳檔案路徑"""
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     try:
         tts = gTTS(text=word, lang=lang, slow=False)
@@ -89,7 +86,6 @@ if query:
     if info:
         st.markdown(f"**單字**: `{word}`")
         st.markdown(f"**音標**: {info.get('phonetic') or '無'}")
-        # 定義
         defs = info.get("definitions", [])
         if defs:
             st.markdown("**定義**:")
@@ -100,7 +96,6 @@ if query:
         else:
             st.write("**定義**: 無")
 
-        # 例句
         example = info.get("example")
         if example:
             st.markdown("**例句**:")
@@ -108,7 +103,6 @@ if query:
         else:
             st.write("**例句**: 無")
 
-        # 播放音檔（優先使用來源提供的 audio_url）
         audio_url = info.get("audio_url")
         if audio_url:
             try:
@@ -122,7 +116,6 @@ if query:
                 else:
                     st.warning("備援 TTS 產生失敗。")
         else:
-            # 備援 TTS
             tmp_path = generate_tts_file(word)
             if tmp_path:
                 st.audio(tmp_path)
@@ -132,7 +125,7 @@ if query:
         st.success("查詢完成（來源：DictionaryAPI.dev）")
     else:
         st.warning("主要字典查無結果，使用備援翻譯與發音。")
-        zh = fallback_translate_zh(word)
+        zh = fallback_translate_zh_libre(word)
         if zh:
             st.markdown(f"**中文翻譯（備援）**: {zh}")
         else:
