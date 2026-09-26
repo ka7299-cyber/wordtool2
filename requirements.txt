@@ -1,7 +1,2 @@
 streamlit
-pandas
-yfinance
 requests
-numpy
-scipy
-plotly
