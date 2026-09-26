@@ -1,3 +1,11 @@
+# =========================
+# app.py - 英文單字快查工具
+# 分區說明（請參考檔案內註解）
+# =========================
+
+# -------------------------
+# 1. Imports 與基本設定區
+# -------------------------
 import streamlit as st
 import requests
 from gtts import gTTS
@@ -6,8 +14,39 @@ import os
 
 st.set_page_config(page_title="英文單字快查工具", page_icon="📘", layout="centered")
 
+
+# -------------------------
+# 2. Helper 函式區（可修改）
+# -------------------------
+def safe_remove(path):
+    """安全刪除檔案"""
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def generate_tts_file(word: str, lang: str = "en"):
+    """用 gTTS 產生暫存音檔並回傳檔案路徑；失敗回傳 None"""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    try:
+        tts = gTTS(text=word, lang=lang, slow=False)
+        tts.save(tmp.name)
+        return tmp.name
+    except Exception:
+        try:
+            tmp.close()
+            os.remove(tmp.name)
+        except Exception:
+            pass
+        return None
+
+
 def extract_examples_from_dictionary_data(data):
-    """從 dictionaryapi 的回傳資料中擷取所有例句（若有），回傳 list"""
+    """
+    從 dictionaryapi 的回傳資料中擷取所有例句（若有），回傳 list（去重並保留順序）
+    """
     examples = []
     for m in data.get("meanings", []):
         for d in m.get("definitions", []):
@@ -18,7 +57,6 @@ def extract_examples_from_dictionary_data(data):
                 for e in d.get("examples"):
                     if e:
                         examples.append(e)
-    # 去重並保留順序
     seen = set()
     uniq = []
     for e in examples:
@@ -27,28 +65,42 @@ def extract_examples_from_dictionary_data(data):
             uniq.append(e)
     return uniq
 
+
 def generate_simple_example(word: str, pos_hint: str = ""):
-    """根據詞性提示產生一個簡短、自然的例句（備援用）"""
+    """
+    根據詞性提示產生一個簡短、自然的例句（備援用）
+    可在此擴充更多模板或語法處理（第三人稱、冠詞等）
+    """
     w = word
     pos = (pos_hint or "").lower()
-    # 常見簡單模板
     if "verb" in pos or pos.startswith("v"):
         return f"I often {w} when I have free time."
     if "noun" in pos or pos.startswith("n"):
-        # 判斷是否需要冠詞（非常簡單的判斷）
-        if w[0].lower() in "aeiou":
-            return f"The {w} is on the table."
         return f"The {w} is on the table."
     if "adj" in pos or "adjective" in pos or pos.startswith("a"):
         return f"She looked very {w} today."
     if "adv" in pos or pos.startswith("r"):
         return f"He spoke {w} during the meeting."
-    # 沒有詞性提示時用通用模板
     return f"I saw a {w} yesterday."
 
+
+# -------------------------
+# 3. Dictionary / 翻譯取得區（可替換來源）
+# -------------------------
 @st.cache_data(show_spinner=False)
 def get_word_info_from_dictionaryapi(word: str):
-    """從 dictionaryapi.dev 取得詞條（若有），並回傳 definitions、examples、phonetic、audio_url、pos_hint"""
+    """
+    從 dictionaryapi.dev 取得詞條（若有），並回傳 dict:
+    {
+      "source": "dictionaryapi",
+      "phonetic": str,
+      "definitions": [{"pos":..., "definition":...}, ...],
+      "examples": [...],
+      "audio_url": str or None,
+      "pos_hint": str
+    }
+    若無結果回傳 None
+    """
     try:
         url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
         r = requests.get(url, timeout=6)
@@ -56,7 +108,6 @@ def get_word_info_from_dictionaryapi(word: str):
             return None
         data = r.json()[0]
         phonetic = data.get("phonetic", "") or ""
-        # definitions 與詞性
         definitions = []
         pos_hint = ""
         for m in data.get("meanings", []):
@@ -65,9 +116,7 @@ def get_word_info_from_dictionaryapi(word: str):
                 pos_hint = pos
             for d in m.get("definitions", []):
                 definitions.append({"pos": pos, "definition": d.get("definition", "")})
-        # 擷取來源例句（可能為空）
         examples = extract_examples_from_dictionary_data(data)
-        # audio
         audio_url = None
         for ph in data.get("phonetics", []):
             if ph.get("audio"):
@@ -85,8 +134,12 @@ def get_word_info_from_dictionaryapi(word: str):
     except Exception:
         return None
 
+
 def fallback_translate_zh_libre(word: str):
-    """使用 LibreTranslate 公開 API 作為備援翻譯（若被封鎖會回傳 None）"""
+    """
+    備援翻譯：呼叫 LibreTranslate 公開 API（若被封鎖或不可用會回傳 None）
+    若你不想使用任何外部翻譯，可把這個函式改為回傳 None 或本地字典
+    """
     try:
         url = "https://libretranslate.com/translate"
         payload = {"q": word, "source": "en", "target": "zh", "format": "text"}
@@ -97,31 +150,14 @@ def fallback_translate_zh_libre(word: str):
         pass
     return None
 
-def generate_tts_file(word: str, lang: str = "en"):
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    try:
-        tts = gTTS(text=word, lang=lang, slow=False)
-        tts.save(tmp.name)
-        return tmp.name
-    except Exception:
-        try:
-            tmp.close()
-            os.remove(tmp.name)
-        except Exception:
-            pass
-        return None
 
-def safe_remove(path):
-    try:
-        if path and os.path.exists(path):
-            os.remove(path)
-    except Exception:
-        pass
-
-# ---------- UI ----------
+# -------------------------
+# 4. UI 顯示區（主要修改點）
+# -------------------------
 st.title("📘 英文單字快查工具")
 st.write("輸入單字後會顯示音標、例句、定義與發音（若有）。若主要來源無結果，會使用備援翻譯與 TTS。")
 
+# 使用者輸入（建議在此處處理大小寫與空白）
 query = st.text_input("輸入英文單字：", value="", placeholder="例如: apple").strip()
 
 if query:
@@ -129,9 +165,20 @@ if query:
     with st.spinner("查詢中…"):
         info = get_word_info_from_dictionaryapi(word)
 
+    # 偵錯用：展開可查看 API 原始回傳（部署時可移除或註解）
+    with st.expander("顯示 API 原始回傳（偵錯用）"):
+        try:
+            raw = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=6).json()
+            st.write(raw)
+        except Exception as e:
+            st.write("取得原始回傳失敗：", e)
+
     if info:
+        # 基本欄位
         st.markdown(f"**單字**: `{word}`")
         st.markdown(f"**音標**: {info.get('phonetic') or '無'}")
+
+        # 定義顯示（最多顯示前 5 個）
         defs = info.get("definitions", [])
         if defs:
             st.markdown("**定義**:")
@@ -158,6 +205,7 @@ if query:
             st.write("**例句**: 無")
         # ====== 例句顯示結束 ======
 
+        # 發音：優先使用來源 audio_url，否則用 gTTS 產生
         audio_url = info.get("audio_url")
         if audio_url:
             try:
@@ -177,8 +225,10 @@ if query:
                 safe_remove(tmp_path)
             else:
                 st.warning("沒有找到發音音檔，且備援 TTS 產生失敗。")
+
         st.success("查詢完成（來源：DictionaryAPI.dev）")
     else:
+        # 主要來源查無結果時的備援流程
         st.warning("主要字典查無結果，使用備援翻譯與發音。")
         zh = fallback_translate_zh_libre(word)
         if zh:
