@@ -1,8 +1,5 @@
 import streamlit as st
 import requests
-import pyttsx3
-import tempfile
-import os
 
 def get_word_info(word):
     url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}"
@@ -24,18 +21,20 @@ def get_word_info(word):
         if example:
             break
     
+    # 找音檔
+    audio_url = None
+    if "phonetics" in data:
+        for ph in data["phonetics"]:
+            if "audio" in ph and ph["audio"]:
+                audio_url = ph["audio"]
+                break
+    
     return {
         "word": word,
         "phonetic": phonetic,
-        "example": example if example else "無例句"
+        "example": example if example else "無例句",
+        "audio_url": audio_url
     }
-
-def generate_audio(word):
-    engine = pyttsx3.init()
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    engine.save_to_file(word, tmp_file.name)
-    engine.runAndWait()
-    return tmp_file.name
 
 # Streamlit 介面
 st.title("📘 英文單字快查工具")
@@ -49,12 +48,7 @@ if word:
         st.write(f"**音標**: {result['phonetic']}")
         st.write(f"**例句**: {result['example']}")
         
-        # 語音播放
-        audio_file = generate_audio(word)
-        audio_bytes = open(audio_file, "rb").read()
-        st.audio(audio_bytes, format="audio/mp3")
-        
-        # 清理暫存檔
-        os.remove(audio_file)
-    else:
-        st.error("查不到這個單字，請再試一次。")
+        # 播放音檔
+        if result["audio_url"]:
+            st.audio(result["audio_url"])
+        else
