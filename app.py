@@ -11,7 +11,6 @@ def get_word_info(word):
     data = response.json()[0]
     phonetic = data.get("phonetic", "無音標")
     
-    # 找例句
     example = None
     for meaning in data["meanings"]:
         for definition in meaning["definitions"]:
@@ -21,7 +20,6 @@ def get_word_info(word):
         if example:
             break
     
-    # 找音檔
     audio_url = None
     if "phonetics" in data:
         for ph in data["phonetics"]:
@@ -36,7 +34,6 @@ def get_word_info(word):
         "audio_url": audio_url
     }
 
-# Streamlit 介面
 st.title("📘 英文單字快查工具")
 
 word = st.text_input("輸入英文單字：")
@@ -48,7 +45,9 @@ if word:
         st.write(f"**音標**: {result['phonetic']}")
         st.write(f"**例句**: {result['example']}")
         
-        # 播放音檔
         if result["audio_url"]:
             st.audio(result["audio_url"])
-        else
+        else:
+            st.warning("⚠️ 沒有找到發音音檔")
+    else:
+        st.error("查不到這個單字，請再試一次。")
